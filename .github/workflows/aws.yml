@@ -88,6 +88,10 @@ jobs:
           host: ${{ secrets.EIP }}
           username: ec2-user
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Abort on the first failing command instead of running to the end
+          # and exiting 0 from the final echo. Action-level flag, so the
+          # script below stays exactly as originally written.
+          script_stop: true
           script: |
             ROOT_DIR=/home/ec2-user
             DEPLOY_PATH=${ROOT_DIR}/source
