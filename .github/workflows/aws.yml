@@ -74,7 +74,7 @@ jobs:
           tar -czvf app.tar.gz git/
 
       - name: Upload app.tar.gz to server
-        uses: appleboy/scp-action@master
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
         with:
           host: ${{ secrets.EIP }}
           username: ec2-user
@@ -83,16 +83,17 @@ jobs:
           target: /home/ec2-user/
 
       - name: Deploy HearingSystem
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.EIP }}
           username: ec2-user
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # Abort on the first failing command instead of running to the end
-          # and exiting 0 from the final echo. Action-level flag, so the
-          # script below stays exactly as originally written.
-          script_stop: true
           script: |
+            # Abort on the first failing command instead of running to the end
+            # and exiting 0 from the final echo. Upstream removed the
+            # script_stop input; this is the documented replacement.
+            set -euo pipefail
+
             ROOT_DIR=/home/ec2-user
             DEPLOY_PATH=${ROOT_DIR}/source
             APACHE_PATH=/var/www/hearing
