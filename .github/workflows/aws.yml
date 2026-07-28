@@ -1,0 +1,123 @@
+name: HearingSystem CI/CD Workflow
+
+on:
+  # NOTE: vars cannot be used in these filters, so both branches always
+  # trigger a run. Which one actually deploys is decided by the `gate` job.
+  push:
+    branches:
+      - lr
+      - lr-backup
+  # Manual run deploys whichever branch you pick in the ref dropdown,
+  # ignoring ACTIVE_BRANCH. Used for short client look-backs at lr-backup.
+  workflow_dispatch:
+
+# One server, one docroot: never let two deploys interleave.
+concurrency:
+  group: hearing-deploy
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.pick.outputs.deploy }}
+    steps:
+      - id: pick
+        env:
+          ACTIVE_BRANCH: ${{ vars.ACTIVE_BRANCH }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref_name }}
+        run: |
+          case "$REF" in
+            lr|lr-backup) ;;
+            *)
+              echo "::error::$REF is not a deployable branch (expected lr or lr-backup)."
+              exit 1
+              ;;
+          esac
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Manual run — deploying $REF (ACTIVE_BRANCH is ${ACTIVE_BRANCH:-unset})."
+            exit 0
+          fi
+
+          if [ -z "$ACTIVE_BRANCH" ]; then
+            echo "::error::Repository variable ACTIVE_BRANCH is not set (expected lr or lr-backup)."
+            exit 1
+          fi
+
+          if [ "$REF" = "$ACTIVE_BRANCH" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$REF owns the server — deploying."
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping: pushed to $REF but ACTIVE_BRANCH is $ACTIVE_BRANCH."
+          fi
+
+  deploy:
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check GitHub Actions IP
+        run: curl https://api.ipify.org
+
+      - name: Package app
+        run: |
+          mkdir git
+          rsync -av --exclude='.git' --exclude='git' ./ git/
+          tar -czvf app.tar.gz git/
+
+      - name: Upload app.tar.gz to server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EIP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: app.tar.gz
+          target: /home/ec2-user/
+
+      - name: Deploy HearingSystem
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EIP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            ROOT_DIR=/home/ec2-user
+            DEPLOY_PATH=${ROOT_DIR}/source
+            APACHE_PATH=/var/www/hearing
+
+            mkdir -p ${DEPLOY_PATH}
+
+            cd ${ROOT_DIR}
+            mv app.tar.gz ${DEPLOY_PATH}/
+
+            cd ${DEPLOY_PATH}
+            sudo rm -rf git
+            sudo tar xzvf app.tar.gz
+            sudo chown -R ec2-user:ec2-user git
+
+            sudo systemctl stop httpd
+
+            sudo rm -rf ${APACHE_PATH}/src
+            sudo mv ${DEPLOY_PATH}/git/webroot/css/* ${APACHE_PATH}/webroot/css/
+            sudo mv ${DEPLOY_PATH}/git/webroot/js/* ${APACHE_PATH}/webroot/js/
+            sudo mv ${DEPLOY_PATH}/git/webroot/img/* ${APACHE_PATH}/webroot/img/
+
+            sudo mv ${DEPLOY_PATH}/git/src ${APACHE_PATH}/
+            sudo cp ${DEPLOY_PATH}/git/composer.json ${APACHE_PATH}/composer.json
+            sudo cp ${DEPLOY_PATH}/git/index.php ${APACHE_PATH}/index.php
+
+            sudo cp ${DEPLOY_PATH}/git/config/constant.php ${APACHE_PATH}/config/constant.php
+            sudo cp ${DEPLOY_PATH}/git/config/routes.php ${APACHE_PATH}/config/routes.php
+
+            sudo rm -rf ${APACHE_PATH}/tmp/cache/models/*
+            sudo systemctl start httpd
+
+            echo "DEPLOY DONE"
