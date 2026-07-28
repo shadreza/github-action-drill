@@ -25,4 +25,4 @@ jobs:
           echo "trigger: ${{ github.event_name }}"
 
       - name: Deploy
-        run: echo "TODO: real deploy steps go here"
+        run: echo "TODO - real deploy steps go here"
