@@ -1,0 +1,28 @@
+name: Deploy (reusable)
+
+# Shared deployment logic. Both lr and lr-backup deploy identically,
+# so the steps live here once and are called by cicd.yml.
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: Branch being deployed
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Show what we are deploying
+        run: |
+          echo "branch:  ${{ inputs.branch }}"
+          echo "sha:     $(git rev-parse --short HEAD)"
+          echo "trigger: ${{ github.event_name }}"
+
+      - name: Deploy
+        run: echo "TODO: real deploy steps go here"

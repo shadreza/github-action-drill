@@ -1,0 +1,28 @@
+name: Set active branch
+
+# Optional convenience: flip the toggle from the Actions tab instead of
+# Settings → Secrets and variables → Actions → Variables.
+# Requires a PAT (secret ACTIONS_VARS_TOKEN) with repo `variables: write`
+# permission — the default GITHUB_TOKEN cannot write Actions variables.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Which branch should auto-deploy
+        required: true
+        type: choice
+        options:
+          - lr
+          - lr-backup
+
+jobs:
+  set:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.ACTIONS_VARS_TOKEN }}
+        run: |
+          gh variable set ACTIVE_BRANCH \
+            --repo "${{ github.repository }}" \
+            --body "${{ inputs.branch }}"
+          echo "::notice::ACTIVE_BRANCH is now ${{ inputs.branch }}"

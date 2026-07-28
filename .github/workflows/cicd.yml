@@ -1,0 +1,62 @@
+name: CI/CD
+
+on:
+  # NOTE: vars/secrets cannot be used in these filters, so both branches
+  # always trigger a run. The toggle is enforced in the `gate` job below.
+  push:
+    branches:
+      - lr
+      - lr-backup
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to deploy (manual override of ACTIVE_BRANCH)
+        required: true
+        type: choice
+        default: lr
+        options:
+          - lr
+          - lr-backup
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.pick.outputs.branch }}
+      deploy: ${{ steps.pick.outputs.deploy }}
+    steps:
+      - id: pick
+        env:
+          ACTIVE_BRANCH: ${{ vars.ACTIVE_BRANCH }}
+          EVENT: ${{ github.event_name }}
+          PUSHED: ${{ github.ref_name }}
+          CHOSEN: ${{ inputs.branch }}
+        run: |
+          if [ -z "$ACTIVE_BRANCH" ]; then
+            echo "::error::Repository variable ACTIVE_BRANCH is not set (expected 'lr' or 'lr-backup')."
+            exit 1
+          fi
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "branch=$CHOSEN" >> "$GITHUB_OUTPUT"
+            echo "deploy=true"    >> "$GITHUB_OUTPUT"
+            echo "::notice::Manual run — deploying $CHOSEN (ACTIVE_BRANCH is $ACTIVE_BRANCH)."
+            exit 0
+          fi
+
+          echo "branch=$PUSHED" >> "$GITHUB_OUTPUT"
+          if [ "$PUSHED" = "$ACTIVE_BRANCH" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$PUSHED is the active branch — deploying."
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping: pushed to $PUSHED but ACTIVE_BRANCH is $ACTIVE_BRANCH."
+          fi
+
+  deploy:
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      branch: ${{ needs.gate.outputs.branch }}
+    secrets: inherit
