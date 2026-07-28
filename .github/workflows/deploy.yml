@@ -1,7 +1,8 @@
 name: Deploy (reusable)
 
-# Shared deployment logic. Both lr and lr-backup deploy identically,
-# so the steps live here once and are called by cicd.yml.
+# Shared deployment logic. Staging (lr / lr-backup) and production (master)
+# deploy the same way, so the steps live here once and are parameterised by
+# environment. Callers: cicd-staging.yml, cicd-production.yml.
 on:
   workflow_call:
     inputs:
@@ -9,10 +10,17 @@ on:
         description: Branch being deployed
         required: true
         type: string
+      environment:
+        description: Target environment (staging or production)
+        required: true
+        type: string
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Attaches this job to a GitHub Environment, so protection rules and
+    # environment-scoped secrets apply per target.
+    environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,9 +28,10 @@ jobs:
 
       - name: Show what we are deploying
         run: |
-          echo "branch:  ${{ inputs.branch }}"
-          echo "sha:     $(git rev-parse --short HEAD)"
-          echo "trigger: ${{ github.event_name }}"
+          echo "environment: ${{ inputs.environment }}"
+          echo "branch:      ${{ inputs.branch }}"
+          echo "sha:         $(git rev-parse --short HEAD)"
+          echo "trigger:     ${{ github.event_name }}"
 
       - name: Deploy
-        run: echo "TODO - real deploy steps go here"
+        run: echo "TODO - real deploy steps for ${{ inputs.environment }}"

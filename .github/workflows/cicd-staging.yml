@@ -1,8 +1,11 @@
-name: CI/CD
+name: CI/CD (staging)
 
+# lr and lr-backup share one staging environment, so only the branch named
+# by the ACTIVE_BRANCH repository variable auto-deploys. The other branch
+# still gets a run; its deploy job is skipped.
 on:
-  # NOTE: vars/secrets cannot be used in these filters, so both branches
-  # always trigger a run. The toggle is enforced in the `gate` job below.
+  # NOTE: vars cannot be used in these filters, so both branches always
+  # trigger a run. The toggle is enforced in the `gate` job below.
   push:
     branches:
       - lr
@@ -10,13 +13,18 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: Branch to deploy (manual override of ACTIVE_BRANCH)
+        description: Branch to put on staging now (ignores ACTIVE_BRANCH)
         required: true
         type: choice
         default: lr
         options:
           - lr
           - lr-backup
+
+# One staging slot: queue deploys rather than racing them.
+concurrency:
+  group: staging
+  cancel-in-progress: false
 
 jobs:
   gate:
@@ -40,14 +48,14 @@ jobs:
           if [ "$EVENT" = "workflow_dispatch" ]; then
             echo "branch=$CHOSEN" >> "$GITHUB_OUTPUT"
             echo "deploy=true"    >> "$GITHUB_OUTPUT"
-            echo "::notice::Manual run — deploying $CHOSEN (ACTIVE_BRANCH is $ACTIVE_BRANCH)."
+            echo "::notice::Manual run — putting $CHOSEN on staging (ACTIVE_BRANCH is $ACTIVE_BRANCH)."
             exit 0
           fi
 
           echo "branch=$PUSHED" >> "$GITHUB_OUTPUT"
           if [ "$PUSHED" = "$ACTIVE_BRANCH" ]; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::$PUSHED is the active branch — deploying."
+            echo "::notice::$PUSHED owns staging — deploying."
           else
             echo "deploy=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping: pushed to $PUSHED but ACTIVE_BRANCH is $ACTIVE_BRANCH."
@@ -59,4 +67,5 @@ jobs:
     uses: ./.github/workflows/deploy.yml
     with:
       branch: ${{ needs.gate.outputs.branch }}
+      environment: staging
     secrets: inherit
